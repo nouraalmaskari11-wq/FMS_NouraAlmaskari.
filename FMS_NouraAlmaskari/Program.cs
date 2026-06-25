@@ -1,4 +1,5 @@
 ﻿using FMS_NouraAlmaskari_.Models;
+using Microsoft.VisualBasic;
 using System.Net.NetworkInformation;
 using System.Numerics;
 namespace FMS_NouraAlmaskari_
@@ -91,7 +92,7 @@ namespace FMS_NouraAlmaskari_
         {
             if (context.Flights.Count == 0)
             {
-                Console.WriteLine("there are no Scheduled flight int the system!");
+                Console.WriteLine("there are no Scheduled flight in the system!");
                 return;
             }
 
@@ -186,7 +187,7 @@ namespace FMS_NouraAlmaskari_
 
         public static void BookFlight()
         {
-            if (context.Passengers.Count == 0)
+            if (!context.Passengers.Any())
             {
                 Console.WriteLine("No passengers registered. please register a passenger first.");
                 return;
@@ -197,7 +198,7 @@ namespace FMS_NouraAlmaskari_
             Console.WriteLine("Enter passenger ID:");
             int passengerId = int.Parse(Console.ReadLine());
 
-            var passenger = context.Bookings.FirstOrDefault(P => P.passengerId == passengerId);
+            var passenger = context.Passengers.FirstOrDefault(P => P.passengerId == passengerId);
 
             if (passenger == null)
             {
@@ -223,7 +224,7 @@ namespace FMS_NouraAlmaskari_
 
             var selectedFlight = context.Flights.FirstOrDefault(f => f.flightId == flightId);
 
-            if (selectedFlight == null || selectedFlight.status != "Scheduled")
+            if (selectedFlight == null || selectedFlight.status != "Scheduled" || selectedFlight.availableSeats <= 0)
             {
                 Console.WriteLine("Invalid flight or no seats available!");
                 return;
@@ -241,23 +242,16 @@ namespace FMS_NouraAlmaskari_
 
         public static void CancelBooking()
         {
-            if (context.Bookings.Count() == 0)
+            if (!context.Bookings.Any(b=>b.status=="Confirmed"))
             {
                 Console.WriteLine("No Bookings yet!");
                 return;
             }
 
-            var confirmedBookings = context.Bookings.Where(b => b.status == "Confirmed").ToList();
-            if (confirmedBookings.Count() == 0)
-            {
-                Console.WriteLine("No confirmed bookings to cancel!");
-                return;
-            }
-
             Console.WriteLine("Enter booking ID:");
-            int bookingId= int.Parse(Console.ReadLine());
+            int bookingId = int.Parse(Console.ReadLine());
 
-            Booking booking = context.Bookings.FirstOrDefault(b=> b.bookingId == bookingId);
+            Booking booking = context.Bookings.FirstOrDefault(b => b.bookingId == bookingId);
 
             if (booking == null)
             {
@@ -271,41 +265,209 @@ namespace FMS_NouraAlmaskari_
                 return;
             }
 
+
+            Flight flight = context.Flights.FirstOrDefault(f => f.flightId == booking.flightId);
+
+            if (flight == null)
+            {
+                Console.WriteLine("Associated flight not found!");
+                return;
+            }
+
+
+            if (flight.status != "Scheduled")
+            {
+                Console.WriteLine("Cannot cancel booking because the flight has already departed or been cancelled.");
+                return;
+            }
+
             booking.status = "Cancelled";
 
-            Flight flight = context.Flights.FirstOrDefault(f=> f.flightId == bookingId);
-            if (flight != null && flight.status== "Scheduled")
-            {
-                flight.availableSeats++;
-            }
-            else if (flight != null && flight.status != "Scheduled")
-            {
-                Console.WriteLine("Seats can not be returned. flight has already departed or been cancelled!");
-            }
-
-
+            flight.availableSeats++;
+                      
             Console.WriteLine($"Booking: {bookingId}. Cancelled successfully!");
 
         }
+
         public static void DepartFlight()
         {
+            if (!context.Flights.Any(f=>f.status == "Scheduled"))
+            {
+                Console.WriteLine("No scheduled flights to depart.");
+                return;
+            }
 
+            Console.WriteLine("Enter flight ID to depart: ");
+            int flightId =int.Parse(Console.ReadLine());
+
+            Flight flight = context.Flights.FirstOrDefault(f => f.flightId == flightId);
+            if (flight == null)
+            {
+                Console.WriteLine("Flight not found.");
+                return;
+            }
+
+            if (flight.status != "Scheduled")
+            {
+                Console.WriteLine($"Flight is already {flight.status}. can not depart");
+                return;
+            }
+
+            flight.status = "Departed";
+
+            Pilot pilot = context.Pilots.FirstOrDefault(p => p.pilotId == flight.pilotId);
+            if (pilot != null)
+            {
+                int hours = Math.Max(1, flight.duration / 60);
+                pilot.flightHours += hours;
+
+                pilot.isAvailable = true;
+                Console.WriteLine($"Pilot {pilot.pilotName} hours increased by {hours}");
+            }
+
+            Console.WriteLine($"Flight {flight.flightCode} has departed.");
         }
+
         public static void CancelFlight()
         {
+            if (!context.Flights.Any(f => f.status == "Scheduled"))
+            {
+                Console.WriteLine("No scheduled flights to cancel.");
+                return;
+            }
+
+            Console.WriteLine("Enter flight ID to cancel: ");
+            int flightId = int.Parse(Console.ReadLine());
+
+            Flight flight = context.Flights.FirstOrDefault(f => f.flightId == flightId);
+            if (flight == null)
+            {
+                Console.WriteLine("Flight not found.");
+                return;
+            }
+
+            if (flight.status != "Scheduled")
+            {
+                Console.WriteLine($"Flight is already {flight.status}. can not cancel");
+                return;
+            }
+
+            List<Booking> toCancelBookings = context.Bookings.Where(b => b.flightId == flightId && b.status == "Confirmed").ToList();
+
+           
+            foreach (Booking b in toCancelBookings)
+            {
+                b.status = "Cancelled";
+                flight.availableSeats++;
+              
+            }
+
+            int affectedBookings = toCancelBookings.Count;
+
+            flight.status = "Cancelled";
+
+            Pilot pilot = context.Pilots.FirstOrDefault(p => p.pilotId == flight.pilotId);
+
+            if (pilot != null)
+            {
+                pilot.isAvailable = true;
+                Console.WriteLine($"Pilot {pilot.pilotName} now is available.");
+            }
+
+            Console.WriteLine($"Flight {flight.flightCode} cancelled. {affectedBookings} bookings were cancelled.");
 
         }
+
         public static void PassengerBookingHistory()
         {
+            if (!context.Passengers.Any())
+            {
+                Console.WriteLine("No passenger registered.");
+                return;
+            }
 
+            Console.WriteLine("Enter passenger ID: ");
+            int passengerId = int.Parse(Console.ReadLine());
+
+            Passenger passenger = context.Passengers.FirstOrDefault(p => p.passengerId == passengerId);
+            if (passenger == null)
+            {
+                Console.WriteLine("Passenger not found.");
+                return;
+            }
+
+            List<Booking> bookings = context.Bookings.Where(b => b.passengerId == passengerId).ToList();
+
+            if (bookings.Count == 0)
+            {
+                Console.WriteLine($"No bookings found for {passenger.passengerName}.");
+                return;
+            }
+            Console.WriteLine($"Booking history for {passenger.passengerName}:");
+            decimal totalAmount = 0;
+            foreach (Booking booking in bookings)
+            {
+                Flight flight = context.Flights.FirstOrDefault(f => f.flightId == booking.flightId);
+
+                if (flight == null)
+                {
+                    Console.WriteLine($"Flight not found for booking {booking.bookingId}");
+                    continue;
+                }
+
+                Console.WriteLine($"Flight code: {flight.flightCode} | Origin: {flight.origin} | Destination: {flight.destination}" +
+                    $"Departure date: {flight.departureDate} | Seat Number: {booking.seatNumber} | Price paid: {booking.totalPrice}" +
+                    $"Booking status: {booking.status}");
+
+                if (booking.status == "Confirmed")
+                {
+                    totalAmount += booking.totalPrice;
+                }
+            }
+            Console.WriteLine($"Total amount spent on confirmed bookings: {totalAmount}");
         }
+        
         public static void FlightRevenue_LoadFactorReport()
         {
+            if (!context.Flights.Any())
+            {
+                Console.WriteLine("No flight in the system.");
+                return;
+            }
+
+            Console.WriteLine("Flight revenue & Load factor report");
+
+            var report = context.Flights.Select(flight => new
+            {
+                Flight = flight,
+                confirmedBookings = context.Bookings.Count(b => b.flightId == flight.flightId && b.status == "Confirmed"),
+                TotalRevenue = context.Bookings.Where(b => b.flightId == flight.flightId && b.status == "Confirmed").Sum(b => b.totalPrice)
+            }).ToList();
+
+            var storedReport = report.OrderByDescending(r => r.TotalRevenue).ToList();
+            foreach (var item in storedReport)
+            {
+                var flight = item.Flight;
+                var aircraft = context.Aircrafts.FirstOrDefault(a => a.aircraftId == flight.aircraftId);
+
+                double loadFactor = 0;
+
+                if (aircraft != null && aircraft.totalSeats > 0)
+                {
+                    loadFactor = (double)item.confirmedBookings / aircraft.totalSeats * 100;
+                }
+
+                Console.WriteLine($"Flight Code: {flight.flightCode} | Origin: {flight.origin} | Destination: {flight.destination}" +
+                    $"Confirmed: {item.confirmedBookings} | Revenue: {item.TotalRevenue:C}" +
+                    $"Load Factor: {loadFactor:F1}%");
+            }
+            decimal grandTotal = storedReport.Sum(r => r.TotalRevenue);
+            Console.WriteLine($"Grand total revenue: {grandTotal}");
 
         }
 
 
-        public static void Main(string[] args)
+public static void Main(string[] args)
         {
 
             bool Exit = false;
@@ -327,7 +489,7 @@ namespace FMS_NouraAlmaskari_
                 Console.WriteLine("   11. Flight Revenue & Load Factor Report ");
                 Console.WriteLine("   0.  Exit ");
 
-                Console.WriteLine("Chose An Option:");
+                Console.WriteLine("Choose An Option:");
                 int option = int.Parse(Console.ReadLine());
 
                 switch (option)
@@ -368,11 +530,11 @@ namespace FMS_NouraAlmaskari_
                     case 0:
                         Exit = true;
                         Console.WriteLine("Thank you for using Flight Management System.");
-                        Console.WriteLine("Good Bay.");
+                        Console.WriteLine("Goodbye.");
                         break;
 
                     default:
-                        Console.WriteLine("In valid option plz chose a valid option!");
+                        Console.WriteLine("Invalid option plz chose a valid option!");
                         break;
                 }
 
